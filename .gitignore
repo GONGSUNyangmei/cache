@@ -1,0 +1,14 @@
+/.metals
+/.vscode
+/common
+/gen
+/Verilog
+out/
+.bloop/
+build.sc
+commit.sh
+config.json
+instant.py
+mill
+postElaboration.py
+run.sh
