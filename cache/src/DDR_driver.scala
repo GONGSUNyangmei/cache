@@ -7,7 +7,7 @@ import common.axi._
 import common.ToZero
 import common.axi
 
-class DDR_DRIVER (ENABLE_AXI_CTRL		: Boolean=false,
+class Cache (ENABLE_AXI_CTRL		: Boolean=false,
                   BOARD: String="u280",
                   CHANNEL			: Int=0,
                   IP_CORE_NAME  : String="DDR4_mig_blackbox")
