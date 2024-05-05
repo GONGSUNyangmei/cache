@@ -4,7 +4,12 @@
 // #include"Block.hpp"
 #include"Replacement.hpp"
 
-
+typedef enum {
+    WRITE_MISS,
+    READ_MISS,
+    WRITE_HIT,
+    READ_HIT
+} OP_STATE;
 
 
 
@@ -15,7 +20,16 @@ class Set {
     void* read(u_int64_t addr);
     void write(u_int64_t addr, void* data);
     void static_update();
+    void print_snapshot();
+    void record(OP_STATE state);
+    void print_stats();
     //void print();
+    u_int64_t read_count;
+    u_int64_t write_count;
+    u_int64_t read_hit_count;
+    u_int64_t write_hit_count;
+    u_int64_t read_miss_count;
+    u_int64_t write_miss_count;
     private:
     Block** blocks;
     Replacement* replacer;
@@ -23,14 +37,17 @@ class Set {
     int block_offset;
     int index_len;
     //todo add status metadata
+
 };
 
 class Cache {
     public:
         Cache(int size, int block_size, int associativity, int write_policy, int write_miss_policy, int hit_latency, int miss_latency);
         ~Cache();
-        void read(u_int64_t addr);
-        void write(u_int64_t addr);
+        void* read(u_int64_t addr);
+        void write(u_int64_t addr, void* data);
+        void print_snapshot();
+        void print_stats();
         // void print();
         // void print_stats();
         // void print_config();

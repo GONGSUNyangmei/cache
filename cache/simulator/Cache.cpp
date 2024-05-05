@@ -1,12 +1,12 @@
-#include<Block.hpp>
-#include<Cache.hpp>
+#include"Cache.hpp"
 #include<math.h>
 
 Set::Set(int block_num,int block_offset,int index_len,Replacement* replacer) {
-    size_t size = 2<<block_offset;
+    size_t size = 1<<block_offset;
+   
     blocks = new Block*[block_num];
     for(int i = 0; i < block_num; i++) {
-        blocks[i] = new Block(size);
+        blocks[i] = new Block(size,block_offset,index_len);
     }
     this->block_num = block_num;
     this->block_offset = block_offset;
@@ -25,11 +25,14 @@ void* Set::read(u_int64_t addr) {
     u_int64_t tag = addr >> (index_len + block_offset);
     for(int i = 0; i < block_num; i++) {
         if(blocks[i]->is_hit(tag)) {
+            record(READ_HIT);
+            replacer->update(1,i,blocks);
             return blocks[i]->get_data();
         }
     }
+    record(READ_MISS);
     int victim = replacer->get_victim(blocks);
-    blocks[victim]->write((void*)addr);
+    blocks[victim]->fetch(addr);
     replacer->update(1,victim,blocks);
     return blocks[victim]->get_data();
 }
@@ -38,17 +41,60 @@ void Set::write(u_int64_t addr, void* data) {
     u_int64_t tag = addr >> (index_len + block_offset);
     for(int i = 0; i < block_num; i++) {
         if(blocks[i]->is_hit(tag)) {
+            record(WRITE_HIT);
+            replacer->update(1,i,blocks);
             blocks[i]->write(data);
             return;
         }
     }
+    record(WRITE_MISS);
     int victim = replacer->get_victim(blocks);
+    blocks[victim]->fetch(addr);
     blocks[victim]->write(data);
     replacer->update(1,victim,blocks);
 }
 
 void Set::static_update() {
     replacer->update(0,0,blocks);
+}
+
+void Set::print_snapshot() {
+    std::cout << "*************************************"<<std::endl;
+    std::cout << "           |valid | drity| tag | lru | data |"<<std::endl;
+    for(int i = 0; i < block_num; i++) {
+        std::cout << "block " << i << ":  ";
+        blocks[i]->print_snapshot();
+    }
+}
+
+void Set::record(OP_STATE state) {
+    switch(state) {
+        case READ_HIT:
+            read_count++;
+            read_hit_count++;
+            break;
+        case WRITE_HIT:
+            write_count++;
+            write_hit_count++;
+            break;
+        case READ_MISS:
+            read_count++;
+            read_miss_count++;
+            break;
+        case WRITE_MISS:
+            write_count++;
+            write_miss_count++;
+            break;
+    }
+}
+
+void Set::print_stats() {
+    std::cout << "read_count: " << read_count << std::endl;
+    std::cout << "write_count: " << write_count << std::endl;
+    std::cout << "read_hit_count: " << read_hit_count << std::endl;
+    std::cout << "write_hit_count: " << write_hit_count << std::endl;
+    std::cout << "read_miss_count: " << read_miss_count << std::endl;
+    std::cout << "write_miss_count: " << write_miss_count << std::endl;
 }
 
 Cache::Cache(int size, int block_size, int associativity, int write_policy, int write_miss_policy, int hit_latency, int miss_latency) {
@@ -61,7 +107,11 @@ Cache::Cache(int size, int block_size, int associativity, int write_policy, int 
     int set_num = size / (block_size * associativity);
     int block_num = associativity;
     int block_offset = std::log2(block_size);
+    //std::cout << "block_offset: " << block_offset << std::endl;
+    //std::cout << "block_size: " << block_size << std::endl;
+
     int index_len = std::log2(set_num);
+    //std::cout << "index_len: " << index_len << std::endl;
     sets = new Set*[set_num];
     for(int i = 0; i < set_num; i++) {
         sets[i] = new Set(block_num,block_offset,index_len,replacer);
@@ -83,11 +133,25 @@ Cache::~Cache() {
     delete[] sets;
 }
 
-void Cache::read(u_int64_t addr) {
+void* Cache::read(u_int64_t addr) {
+    u_int64_t index = (addr >> (int)(std::log2(block_size))) & (set_num - 1);
+    void* data;
+    for(int i = 0; i < set_num; i++) {
+        if(i == index) {
+            data = sets[i]->read(addr);
+        }
+        else{
+            sets[i]->static_update();
+        }
+    }
+    return data;
+}
+
+void Cache::write(u_int64_t addr, void* data) {
     u_int64_t index = (addr >> (int)(std::log2(block_size))) & (set_num - 1);
     for(int i = 0; i < set_num; i++) {
         if(i == index) {
-            sets[i]->read(addr);
+            sets[i]->write(addr, data);
             return;
         }
         else{
@@ -96,15 +160,43 @@ void Cache::read(u_int64_t addr) {
     }
 }
 
-void Cache::write(u_int64_t addr) {
-    u_int64_t index = (addr >> (int)(std::log2(block_size))) & (set_num - 1);
+void Cache::print_snapshot() {
     for(int i = 0; i < set_num; i++) {
-        if(i == index) {
-            sets[i]->write(addr, (void*)addr);
-            return;
-        }
-        else{
-            sets[i]->static_update();
-        }
+        std::cout << "*************************************"<<std::endl;
+        std::cout << "Set " << i << ":"<<std::endl;
+        
+        sets[i]->print_snapshot();
     }
+}
+
+void Cache::print_stats() {
+    u_int64_t total_read_count = 0;
+    u_int64_t total_write_count = 0;
+    u_int64_t total_read_hit_count = 0;
+    u_int64_t total_write_hit_count = 0;
+    u_int64_t total_read_miss_count = 0;
+    u_int64_t total_write_miss_count = 0;
+    
+    for(int i = 0; i < set_num; i++) {
+        //std::cout << "set "<<i<<":"<<std::endl;
+        //sets[i]->print_stats();
+        total_read_count += sets[i]->read_count;
+        total_write_count += sets[i]->write_count;
+        total_read_hit_count += sets[i]->read_hit_count;
+        total_write_hit_count += sets[i]->write_hit_count;
+        total_read_miss_count += sets[i]->read_miss_count;
+        total_write_miss_count += sets[i]->write_miss_count;
+    }
+    //std::cout << "total_read_count: " << total_read_count << std::endl;
+    //std::cout << "total_write_count: " << total_write_count << std::endl;
+    //std::cout << "total_read_hit_count: " << total_read_hit_count << std::endl;
+    //std::cout << "total_write_hit_count: " << total_write_hit_count << std::endl;
+    //std::cout << "total_read_miss_count: " << total_read_miss_count << std::endl;
+    //std::cout << "total_write_miss_count: " << total_write_miss_count << std::endl;
+    std::cout << "hit rate: " << (double)(total_read_hit_count + total_write_hit_count) / (total_read_count + total_write_count) << std::endl;
+    //std::cout << "miss rate: " << (double)(total_read_miss_count + total_write_miss_count) / (total_read_count + total_write_count) << std::endl;
+    //std::cout << "read hit rate: " << (double)total_read_hit_count / total_read_count << std::endl;
+    //std::cout << "write hit rate: " << (double)total_write_hit_count / total_write_count << std::endl;
+    //std::cout << "read miss rate: " << (double)total_read_miss_count / total_read_count << std::endl;
+    //std::cout << "write miss rate: " << (double)total_write_miss_count / total_write_count << std::endl;
 }

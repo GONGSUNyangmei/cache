@@ -6,7 +6,7 @@
 
 class Block {
     public:
-    Block(size_t size); 
+    Block(size_t size, int block_offset, int index_len); 
     ~Block();
     void write(void* data); //todo add a function pointer to the replacement policy
     void* get_data();
@@ -19,12 +19,17 @@ class Block {
     void reset_valid();
     void set_lru(u_int32_t lru);
     u_int32_t get_lru();
+    void fetch(u_int64_t addr);
+    void print_snapshot();
     private:
+    size_t size;
     bool valid;
     bool dirty;
     u_int64_t tag;
     void* data;
-
+    int block_offset;
+    int index_len;
     u_int32_t lru;
+
 };
 

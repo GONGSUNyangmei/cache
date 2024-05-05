@@ -24,10 +24,10 @@ class LRU : public Replacement {
     int get_victim(Block** block_array) {
         //find the max lru number
         int max = 0;
-        int index = 0;
+        u_int32_t index = 0;
         for(int i = 0; i < block_num; i++) {
             if(block_array[i]->get_lru() > max) {
-                max = lru[i];
+                max = block_array[i]->get_lru();
                 index = i;
             }
         }
@@ -37,9 +37,10 @@ class LRU : public Replacement {
     void update(bool if_lat_op,int last_index,Block** block_array) {
         if(if_lat_op) {
             for(int i = 0; i < block_num; i++) {
-                if(block_array[i]->get_lru() < block_array[last_index]->get_lru()) {
-                    block_array[i]->set_lru(block_array[i]->get_lru() + 1);
-                }
+                //std::cout <<"block_num"<< block_num << std::endl;
+                //if(block_array[i]->get_lru() < block_array[last_index]->get_lru()) {
+                block_array[i]->set_lru(block_array[i]->get_lru() + 1);
+                //}
             }
             block_array[last_index]->set_lru(0);
         }
