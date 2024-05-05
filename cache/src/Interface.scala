@@ -1,25 +1,36 @@
-// package ddr
+package cache
 
-// import chisel3._
-// import chisel3.util._
-// import chisel3.experimental.{DataMirror, requireIsChiselType,Analog}
-// //import chisel3.experimental
+import chisel3._
+import chisel3.util._
+import chisel3.experimental.{DataMirror, requireIsChiselType,Analog}
 
-// class DDRPin extends Bundle{
-//     val ddr0_sys_100M_p=Input(Clock())  
-//     val ddr0_sys_100M_n=Input(Clock()) 
-//     val act_n       =Output(UInt(1.W))                      
-//     val adr         =Output(UInt(17.W))               
-//     val ba          =Output(UInt(2.W))             
-//     val bg          =Output(UInt(2.W))               
-//     val cke         =Output(UInt(1.W))               
-//     val odt         =Output(UInt(1.W))            
-//     val cs_n        =Output(UInt(1.W))           
-//     val ck_t        =Output(UInt(1.W))             
-//     val ck_c        =Output(UInt(1.W))            
-//     val reset_n     =Output(UInt(1.W))                      
-//     val parity      =Output(UInt(1.W))                      
-//     val dq          =Analog(72.W)               
-//     val dqs_t       =Analog(18.W)              
-//     val dqs_c       =Analog(18.W)	
-// }
+class cache_request (
+    ADDR_WIDTH: Int = 24,
+    DATA_WIDTH: Int = 512,
+    LOCK_WIDTH: Int = 1
+)extends Bundle {
+  val addr = UInt(ADDR_WIDTH.W)
+  val data = UInt(DATA_WIDTH.W)
+  val mask = UInt((DATA_WIDTH/8).W)
+  val lock = UInt(LOCK_WIDTH.W)
+}
+
+class cache_response(
+    DATA_WIDTH: Int = 512
+) extends Bundle {
+  val data = UInt(DATA_WIDTH.W)
+  val success = Bool()
+}
+
+
+class CacheIO (
+    REQ_NUM: Int = 2,
+    ADDR_WIDTH: Int = 24,
+    DATA_WIDTH: Int = 512,
+    LOCK_WIDTH: Int = 1
+)extends Bundle {
+    val req = Flipped(Vec(REQ_NUM, Decoupled(new cache_request(ADDR_WIDTH, DATA_WIDTH, LOCK_WIDTH))))
+    val resp = Vec(REQ_NUM, Decoupled(new cache_response(DATA_WIDTH)))
+}
+
+
