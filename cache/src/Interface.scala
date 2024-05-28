@@ -29,7 +29,7 @@ class CacheIO (
     DATA_WIDTH: Int = 512,
     LOCK_WIDTH: Int = 1
 )extends Bundle {
-    val req = Flipped(Vec(REQ_NUM, Decoupled(new cache_request(ADDR_WIDTH, DATA_WIDTH, LOCK_WIDTH))))
+    val  = Flipped(Vec(REQ_NUM, Decoupled(new cache_request(ADDR_WIDTH, DATA_WIDTH, LOCK_WIDTH))))
     val resp = Vec(REQ_NUM, Decoupled(new cache_response(DATA_WIDTH)))
 }
 
