@@ -13,7 +13,7 @@ object elaborate extends App {
 	val dir 	= TargetDirAnnotation("Verilog")
 
 	args(0) match{
-		case "xxx" => stage.execute(arr,Seq(ChiselGeneratorAnnotation(() => new xxx()),dir))
+		case "CacheCore" => stage.execute(arr,Seq(ChiselGeneratorAnnotation(() => new CacheCore()),dir))
 		case _ => println("Module match failed!")
 	}
 }            
