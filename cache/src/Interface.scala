@@ -7,13 +7,27 @@ import chisel3.experimental.{DataMirror, requireIsChiselType,Analog}
 class cache_request (
     ADDR_WIDTH: Int = 24,
     DATA_WIDTH: Int = 512,
-    LOCK_WIDTH: Int = 1
+    LOCK_WIDTH: Int = 4
 )extends Bundle {
   val addr = UInt(ADDR_WIDTH.W)
   val data = UInt(DATA_WIDTH.W)
   val mask = UInt((DATA_WIDTH/8).W)
   val lock = UInt(LOCK_WIDTH.W)
 }
+
+class cachecore_request (
+    ADDR_WIDTH: Int = 24,
+    DATA_WIDTH: Int = 512,
+    LOCK_WIDTH: Int = 4,
+    PORT_WIDTH: Int = 4
+)extends Bundle {
+  val addr = UInt(ADDR_WIDTH.W)
+  val data = UInt(DATA_WIDTH.W)
+  val mask = UInt((DATA_WIDTH/8).W)
+  val lock = UInt(LOCK_WIDTH.W)
+  val port = UInt(PORT_WIDTH.W)
+}
+
 
 class cache_response(
     DATA_WIDTH: Int = 512

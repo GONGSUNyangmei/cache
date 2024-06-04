@@ -19,14 +19,15 @@ class CacheCore (
     ADDR_WIDTH: Int = 24,
     DATA_WIDTH: Int = 512,
     LOCK_WIDTH: Int = 1,
-    ASSOCIATION: Int = 1,
+    ASSOCIATION: Int = 4,
     ENTRY_NUMBER : Int = 1024,
     LOCK_NUMBER : Int = 2,
-    RAM_LATENCY : Int = 1
+    RAM_LATENCY : Int = 1,
+    PORT_WIDTH: Int = 4
 )extends Module {
     val io = IO(new Bundle{
         // SSD input commands.
-        val request = Flipped(Decoupled(new cache_request(ADDR_WIDTH, DATA_WIDTH, LOCK_WIDTH)))
+        val request = Flipped(Decoupled(new cachecore_request(ADDR_WIDTH, DATA_WIDTH, LOCK_WIDTH,PORT_WIDTH)))
         val response = Decoupled(new cache_response(DATA_WIDTH))
         val mem_interface = new AXI(33, 512, 6, 0, 4)
     })
@@ -36,15 +37,15 @@ class CacheCore (
     val INDEX_LEN = max(1, INDEX_LEN_raw)
     val TAG_LEN   = ADDR_WIDTH - OFFSET_LEN - INDEX_LEN
     val ASSOCIATION_SHIFT = log2Ceil(ASSOCIATION)
-    val SET_NUMBER = ENTRY_NUMBER/ASSOCIATION
+    //val SET_NUMBER = ENTRY_NUMBER/ASSOCIATION
     val addr_reg = RegInit(0.U(ADDR_WIDTH.W))
     val data_reg = RegInit(0.U(DATA_WIDTH.W))
     val mask_reg = RegInit(0.U((DATA_WIDTH/8).W))
     val lock_reg = RegInit(0.U(LOCK_WIDTH.W))
-
+    val port_reg = RegInit(0.U(PORT_WIDTH.W))
     val offset = addr_reg(OFFSET_LEN - 1 ,0)
     val index = addr_reg(INDEX_LEN + OFFSET_LEN - 1, OFFSET_LEN)
-    val tag = addr_reg(ADDR_WIDTH - 1, ADDR_WIDTH - INDEX_LEN - OFFSET_LEN)
+    val tag = addr_reg(ADDR_WIDTH - 1,INDEX_LEN + OFFSET_LEN)
     assert(DATA_WIDTH <= 512 * 8, "Cache line size must not exceed 512 bytes")
     assert(ADDR_WIDTH <= 32, "Address width must be less than 32 bits")
     val DataRam = XRam(UInt(DATA_WIDTH.W), ENTRY_NUMBER,latency=RAM_LATENCY, use_musk=1)
@@ -52,14 +53,15 @@ class CacheCore (
     val TagReg = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(TAG_LEN.W))))
     val ValidReg = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(1.W))))
     val DirtyReg = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(1.W))))
-    val LockReg  = RegInit(VecInit(Seq.fill(SET_NUMBER)(VecInit(Seq.fill(LOCK_NUMBER)(0.U(TAG_LEN.W))))))
+    val LockReg  = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(1.W))))
+    val LockPort  = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(PORT_WIDTH.W))))
     val Clock_LRU_Reg = RegInit(VecInit(Seq.fill(ENTRY_NUMBER)(0.U(1.W))))
     val Clock_pointer = RegInit(VecInit(Seq.fill(ENTRY_NUMBER/ASSOCIATION)(0.U(max(1,log2Ceil(ASSOCIATION)).W))))
     io.mem_interface.init()
     val TagWire = Wire(Vec(ASSOCIATION, UInt(TAG_LEN.W)))
     val ValidWire = Wire(Vec(ASSOCIATION, UInt(1.W)))
-    val LockWire = Wire(Vec(LOCK_NUMBER, UInt(TAG_LEN.W)))
-    val isLockWire = Wire(Vec(LOCK_NUMBER, Bool()))
+    //val LockWire = Wire(Vec(ASSOCIATION, UInt(TAG_LEN.W)))
+
     val ishit = Wire(Bool())
     val isdirty = Wire(Bool())
     val islock = Wire(Bool())
@@ -77,13 +79,13 @@ class CacheCore (
 
 
     switch(state){
-        is(sIdle){
+        is(sIdle){ //* 0
             when(io.request.fire()){
                 state := sIfHit
             }
         }
-        is(sIfHit){
-            when(islock){
+        is(sIfHit){//* 1
+            when(islock ){
                 state := sLocked
             }.otherwise{
                 when(ishit){
@@ -93,7 +95,7 @@ class CacheCore (
                 }
             }
         }
-        is(sFindVictim){    
+        is(sFindVictim){    //* 2
             when(if_find_victim){
                 when(isdirty){
                     state := sWriteBackLatency
@@ -102,63 +104,63 @@ class CacheCore (
                 }
             }
         }
-        is(sWriteBackLatency){
+        is(sWriteBackLatency){  //* 3
             when(sWriteBackLatency_count + 1.U === RAM_LATENCY.asUInt()){
                 state := sWriteBack
             }
         }
-        is(sWriteBack){
+        is(sWriteBack){     //* 4
             when(io.mem_interface.aw.fire()&&io.mem_interface.w.fire()){
                 state := sReadAddr
             }
         }
-        is(sReadAddr){
+        is(sReadAddr){    //* 5 
             when(io.mem_interface.ar.fire()){
                 state := sReadData
             }
         }
-        is(sReadData){
+        is(sReadData){      //* 6
             when(io.mem_interface.r.fire()){
                 state := sWriteMem2Cache
             }
         }
-        is(sWriteMem2Cache){
+        is(sWriteMem2Cache){     //* 7
                 state := sPrepareCache  //todo add condition
             
         }
-        is(sPrepareCache){
+        is(sPrepareCache){          //* 8  prepare cache and lock cache
             when(mask_reg.orR){  //* write option don't need to wait for data
                 state := sRespon
             }.otherwise{
                 state := sWaitCacheLatency
             }
         }
-        is(sWaitCacheLatency){
+        is(sWaitCacheLatency){     //* 9 
             when(sWaitCacheLatency_count + 1.U === RAM_LATENCY.asUInt()){
                 state := sRespon
             }
         }
-        is(sRespon){
+        is(sRespon){            //* 10 
             when(io.response.fire()){
                 state := sIdle
             }
         }
-        is(sLocked){
+        is(sLocked){                //* 11
             when(io.response.fire()){
                 state := sIdle
             }
         }
     }
 
-
+    val hit_index_wire = Wire(UInt((log2Ceil(ENTRY_NUMBER)).W))
     when(state === sIfHit){
         when(ishit){
-            dataram_inex := hit_index
+            dataram_inex := hit_index_wire
         }.otherwise{
-            dataram_inex := victim_index
+            dataram_inex := (index<<ASSOCIATION_SHIFT) + Clock_pointer(index)
         }
     }.elsewhen(state === sFindVictim){
-        dataram_inex := victim_index
+        dataram_inex := (index<<ASSOCIATION_SHIFT) + Clock_pointer(index)
     }.otherwise{
         dataram_inex := dataram_inex
     }
@@ -181,6 +183,7 @@ class CacheCore (
         data_reg := io.request.bits.data
         mask_reg := io.request.bits.mask
         lock_reg := io.request.bits.lock
+        port_reg := io.request.bits.port
     }.otherwise{
         io.request.ready := 0.U
     }
@@ -192,25 +195,27 @@ class CacheCore (
     }
     ishit := ValidWire.asUInt.orR
 
-    for(i <- 0 until LOCK_NUMBER){
-        LockWire(i) := LockReg(index)(i)
-        isLockWire(i) := LockWire(i) === tag
-    }
-    islock := isLockWire.asUInt.orR
+
+    
+    hit_index_wire := (index<<ASSOCIATION_SHIFT) + PriorityEncoder(~ValidWire.asUInt) -1.U
+    islock := LockReg(hit_index_wire) & (LockPort(hit_index_wire) =/= port_reg)
+    
 
 
     
     // find hit index
     when(state === sIfHit){
-        hit_index := (index<<ASSOCIATION_SHIFT) + PriorityEncoder(~ValidWire.asUInt) //todo need to check
+        hit_index := hit_index_wire//todo need to check
     }//todo not used
     
+
+
     // find victim
     when(state === sFindVictim){   //todo state change for find victim
         when(Clock_LRU_Reg((index<<ASSOCIATION_SHIFT)+Clock_pointer(index)) === 1.U){
-            Clock_LRU_Reg((index<<ASSOCIATION_SHIFT)+Clock_pointer(index)) === 0.U
+            Clock_LRU_Reg((index<<ASSOCIATION_SHIFT)+Clock_pointer(index)) := 0.U
             if_find_victim := 0.U
-            when(Clock_pointer(index) === (SET_NUMBER - 1).U){
+            when(Clock_pointer(index) === (ASSOCIATION - 1).U){
                 Clock_pointer(index) := 0.U
             }.otherwise{
                 Clock_pointer(index) := Clock_pointer(index) + 1.U
@@ -223,7 +228,7 @@ class CacheCore (
         if_find_victim := 0.U
     }
 
-    isdirty := DirtyReg(victim_index)
+    isdirty := DirtyReg((index<<ASSOCIATION_SHIFT) + Clock_pointer(index))
 
     DataRam.io.addr_b := dataram_inex
     data_out := DataRam.io.data_out_b
@@ -241,6 +246,10 @@ class CacheCore (
         data_in := io.mem_interface.r.bits.data
     }
 
+    when(state === sWriteMem2Cache){
+            TagReg(dataram_inex) := tag
+            ValidReg(dataram_inex) := 1.U
+    }
     when(state === sWriteMem2Cache){
         DataRam.io.data_in_a := data_in
         DataRam.io.wr_en_a := 1.U
@@ -265,6 +274,23 @@ class CacheCore (
         DataRam.io.data_in_a := 0.U
     }
 
+
+    when(state === sPrepareCache){   //* deal with lock signal
+        Clock_LRU_Reg(dataram_inex) := 1.U
+        when(lock_reg =/= 0.U){
+            LockReg(dataram_inex) := 1.U
+            LockPort(dataram_inex) := port_reg
+        }.otherwise{
+            LockReg(dataram_inex) := 0.U
+        }
+        when(mask_reg =/= 0.U){
+            DirtyReg(dataram_inex) := 1.U
+        }
+    }
+
+    when(state === sWriteBack){
+        DirtyReg(dataram_inex) := 0.U
+    }
     io.mem_interface.aw.valid := state === sWriteBack && io.mem_interface.aw.ready && io.mem_interface.w.ready
     io.mem_interface.w.valid := state === sWriteBack && io.mem_interface.aw.ready && io.mem_interface.w.ready
     io.mem_interface.aw.bits.addr := addr_reg
